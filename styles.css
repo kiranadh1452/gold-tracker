@@ -1,0 +1,254 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ============================================================
+   Gold Tracker — Custom Styles
+   Matches NEPSE Tools dark fintech design language
+   ============================================================ */
+
+:root {
+  --color-surface: #0f1117;
+  --color-card: #1a1d27;
+  --color-border: #2a2d3a;
+  --color-muted: #6b7280;
+  --color-accent: #6366f1;
+  --color-gold: #eab308;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--color-surface);
+  color: #e5e7eb;
+}
+
+/* Number input spinners hidden */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Accordion transition */
+.accordion-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
+  opacity: 0;
+}
+.accordion-body.open {
+  max-height: 4000px;
+  opacity: 1;
+  transition: max-height 0.4s ease-in, opacity 0.3s ease-in;
+}
+
+/* Tab styles */
+.tab-btn {
+  position: relative;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+  transition: color 0.2s;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+.tab-btn:hover {
+  color: #d1d5db;
+}
+.tab-btn.active {
+  color: #fff;
+}
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 1px;
+}
+
+/* Toggle switch */
+.toggle-track {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: #2a2d3a;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.toggle-track.on {
+  background: var(--color-accent);
+}
+.toggle-knob {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+}
+.toggle-track.on .toggle-knob {
+  transform: translateX(16px);
+}
+
+/* Profit/Loss row highlights */
+.row-profit { background: rgba(34, 197, 94, 0.06); }
+.row-loss { background: rgba(239, 68, 68, 0.06); }
+
+/* Modal overlay */
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+/* Radio button group */
+.radio-group {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--color-surface);
+  border-radius: 0.5rem;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+}
+.radio-group button {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  border: none;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.radio-group button.active {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+/* Chart period selector */
+.period-btn {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.period-btn:hover {
+  color: #d1d5db;
+  border-color: #3a3d4a;
+}
+.period-btn.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+/* Pulse indicator */
+.pulse-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.pulse-dot.open {
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  animation: pulse 2s infinite;
+}
+.pulse-dot.closed {
+  background: #6b7280;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+/* Summary card glow */
+.card-glow-green {
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.08);
+}
+.card-glow-red {
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.08);
+}
+.card-glow-yellow {
+  box-shadow: 0 0 15px rgba(234, 179, 8, 0.08);
+}
+.card-glow-accent {
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.08);
+}
+
+/* Sortable header */
+.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.sortable:hover {
+  color: #d1d5db;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-surface); }
+::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3d4a; }
+
+/* Holding row hover */
+.holding-row {
+  transition: background 0.15s;
+}
+.holding-row:hover {
+  background: rgba(99, 102, 241, 0.04);
+}
+
+/* Slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: pointer;
+  border: none;
+}
+
+/* Spin animation for refresh button */
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
