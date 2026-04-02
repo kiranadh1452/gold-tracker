@@ -778,12 +778,12 @@ document.addEventListener('alpine:init', () => {
         } else {
           // Inline fetch if GoldAPI module not loaded yet
           const [goldRes, fxRes] = await Promise.all([
-            fetch('https://api.gold-api.com/spot/quote/XAU/USD').then(r => r.json()),
+            fetch('https://api.gold-api.com/price/XAU').then(r => r.json()),
             fetch('https://api.frankfurter.dev/v2/rate/USD/NPR').then(r => r.json()),
           ]);
 
-          const xauUsd = goldRes.price || goldRes.spot_price || 0;
-          const usdNpr = fxRes.data?.NPR?.value || fxRes.rates?.NPR || 0;
+          const xauUsd = goldRes.price || 0;
+          const usdNpr = fxRes.rate || fxRes.rates?.NPR || 0;
 
           const margin = (parseFloat(this.marketMargin) || 1.3) / 100;
           const perTolaUsd = (xauUsd * GRAMS_PER_TOLA) / GRAMS_PER_TROY_OZ;
@@ -843,60 +843,75 @@ document.addEventListener('alpine:init', () => {
       const toStr = endDate.toISOString().split('T')[0];
 
       try {
-        const [goldRes, fxRes] = await Promise.all([
-          fetch(`https://api.gold-api.com/spot/ohlc/XAU/USD?period=${this.chartPeriod}`)
-            .then(r => r.json())
-            .catch(() => null),
-          fetch(`https://api.frankfurter.dev/v2/rate/USD/NPR?from=${fromStr}&to=${toStr}`)
-            .then(r => r.json())
-            .catch(() => null),
-        ]);
+        // Fetch historical FX data from Frankfurter
+        // (returns flat array of { date, base, quote, rate })
+        const fxRes = await fetch(`https://api.frankfurter.dev/v2/rates/USD/NPR?from=${fromStr}&to=${toStr}`)
+          .then(r => r.json())
+          .catch(() => null);
 
         // Build exchange rate lookup by date
         const fxByDate = {};
         let lastKnownFx = this.marketData?.usdNpr || 135;
 
-        if (fxRes && fxRes.data) {
-          // Frankfurter v2 returns { data: { "YYYY-MM-DD": { NPR: { value: N } } } }
-          for (const [date, rates] of Object.entries(fxRes.data)) {
-            const val = rates?.NPR?.value || rates?.NPR;
-            if (val) {
-              fxByDate[date] = val;
-              lastKnownFx = val;
+        if (Array.isArray(fxRes)) {
+          // Frankfurter v2 returns EUR-based rates; compute USD/NPR = NPR_per_EUR / USD_per_EUR
+          const nprByDate = {};
+          const usdByDate = {};
+          for (const item of fxRes) {
+            if (item.quote === 'NPR' && item.rate > 0) nprByDate[item.date] = item.rate;
+            if (item.quote === 'USD' && item.rate > 0) usdByDate[item.date] = item.rate;
+          }
+          for (const date of Object.keys(nprByDate)) {
+            if (usdByDate[date]) {
+              fxByDate[date] = nprByDate[date] / usdByDate[date];
+              lastKnownFx = fxByDate[date];
             }
           }
-        } else if (fxRes && fxRes.rates) {
-          // Fallback for other response shapes
-          for (const [date, rates] of Object.entries(fxRes.rates)) {
-            if (rates?.NPR) {
-              fxByDate[date] = rates.NPR;
-              lastKnownFx = rates.NPR;
-            }
-          }
+        } else if (fxRes && fxRes.rate) {
+          fxByDate[fxRes.date] = fxRes.rate;
+          lastKnownFx = fxRes.rate;
         }
 
-        // Build chart data from gold OHLC
+        // Build chart data from FX dates with current gold price
+        // (Historical gold OHLC requires an API key, so we use FX history
+        //  combined with the current XAU price for a useful NPR/tola chart)
         const labels = [];
         const values = [];
         const margin = (parseFloat(this.marketMargin) || 1.3) / 100;
+        const currentXau = this.marketData?.xauUsd || 0;
 
-        if (goldRes && Array.isArray(goldRes)) {
-          // Sort by date
-          const sorted = goldRes.sort((a, b) => new Date(a.date || a.t) - new Date(b.date || b.t));
+        // If we have GoldAPI historical data, use it; otherwise use FX variation
+        let goldRes = null;
+        try {
+          if (window.GoldAPI && typeof window.GoldAPI.fetchHistoricalXau === 'function') {
+            const hist = await window.GoldAPI.fetchHistoricalXau(this.chartPeriod);
+            if (hist.length > 0) goldRes = hist;
+          }
+        } catch (e) { /* ignore */ }
 
-          for (const candle of sorted) {
-            const date = (candle.date || candle.t || '').split('T')[0];
-            const close = candle.close || candle.c || 0;
+        if (goldRes && goldRes.length > 0) {
+          const sorted = goldRes.sort((a, b) => new Date(a.date) - new Date(b.date));
+          for (const point of sorted) {
+            const date = String(point.date).split('T')[0];
+            const close = point.close;
             if (!date || !close) continue;
-
             const fx = fxByDate[date] || lastKnownFx;
             const perTolaUsd = (close * GRAMS_PER_TOLA) / GRAMS_PER_TROY_OZ;
             const perTolaNpr = perTolaUsd * fx;
             const afterDuty = perTolaNpr * (1 + CUSTOMS_DUTY);
-            const finalPrice = afterDuty * (1 + margin);
-
             labels.push(date);
-            values.push(Math.round(finalPrice));
+            values.push(Math.round(afterDuty * (1 + margin)));
+          }
+        } else if (currentXau && Object.keys(fxByDate).length > 0) {
+          // Show FX-driven variation with current gold price
+          const sortedDates = Object.keys(fxByDate).sort();
+          for (const date of sortedDates) {
+            const fx = fxByDate[date];
+            const perTolaUsd = (currentXau * GRAMS_PER_TOLA) / GRAMS_PER_TROY_OZ;
+            const perTolaNpr = perTolaUsd * fx;
+            const afterDuty = perTolaNpr * (1 + CUSTOMS_DUTY);
+            labels.push(date);
+            values.push(Math.round(afterDuty * (1 + margin)));
           }
         }
 

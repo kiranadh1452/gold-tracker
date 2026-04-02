@@ -15,7 +15,7 @@
    */
   async function fetchXauUsd() {
     try {
-      const response = await fetch('https://api.gold-api.com/spot/quote/XAU/USD');
+      const response = await fetch('https://api.gold-api.com/price/XAU');
       if (!response.ok) {
         console.warn('fetchXauUsd: response status', response.status);
         return null;
@@ -43,7 +43,7 @@
       const response = await fetch('https://api.frankfurter.dev/v2/rate/USD/NPR');
       if (response.ok) {
         const data = await response.json();
-        const rate = parseFloat(data.rates?.NPR ?? data.rate ?? data.npr);
+        const rate = parseFloat(data.rate ?? data.rates?.NPR ?? data.npr);
         if (!isNaN(rate) && rate > 0) {
           return rate;
         }
@@ -246,7 +246,7 @@
 
     try {
       var url =
-        'https://api.frankfurter.dev/v2/rate/USD/NPR?from=' +
+        'https://api.frankfurter.dev/v2/rates/USD/NPR?from=' +
         encodeURIComponent(fromDate) +
         '&to=' +
         encodeURIComponent(toDate);
@@ -256,25 +256,30 @@
         return {};
       }
       var data = await response.json();
-
-      // The API may return rates nested under a "rates" key or at the top level.
-      var ratesObj = data.rates || data;
       var result = {};
 
-      Object.keys(ratesObj).forEach(function (dateKey) {
-        var entry = ratesObj[dateKey];
-        var rate;
-        if (typeof entry === 'number') {
-          rate = entry;
-        } else if (entry && typeof entry === 'object') {
-          rate = parseFloat(entry.NPR ?? entry.npr ?? Object.values(entry)[0]);
-        } else {
-          return;
-        }
-        if (!isNaN(rate) && rate > 0) {
-          result[dateKey] = rate;
-        }
-      });
+      // v2 range query returns a flat array with EUR as base for all currencies.
+      // To get USD/NPR, we need: NPR_per_EUR / USD_per_EUR for each date.
+      if (Array.isArray(data)) {
+        var nprByDate = {};
+        var usdByDate = {};
+        data.forEach(function (item) {
+          if (item.quote === 'NPR' && item.rate > 0) nprByDate[item.date] = item.rate;
+          if (item.quote === 'USD' && item.rate > 0) usdByDate[item.date] = item.rate;
+        });
+        Object.keys(nprByDate).forEach(function (date) {
+          if (usdByDate[date]) {
+            result[date] = nprByDate[date] / usdByDate[date];
+          }
+        });
+        return result;
+      }
+
+      // Single rate response: { date, rate }
+      if (data.rate && data.date) {
+        result[data.date] = parseFloat(data.rate);
+        return result;
+      }
 
       return result;
     } catch (error) {
