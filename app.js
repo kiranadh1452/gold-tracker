@@ -839,6 +839,7 @@ document.addEventListener('alpine:init', () => {
         '3M': 90,
         '6M': 180,
         '1Y': 365,
+        '2Y': 730,
       };
       const days = periodMap[this.chartPeriod] || 30;
 
@@ -846,79 +847,30 @@ document.addEventListener('alpine:init', () => {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
       const fromStr = startDate.toISOString().split('T')[0];
-      const toStr = endDate.toISOString().split('T')[0];
 
       try {
-        // Fetch historical FX data from NRB (official sell rates)
-        const nrbUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=1000&from=${fromStr}&to=${toStr}`;
-        const fxRes = await fetch(nrbUrl)
-          .then(r => r.json())
-          .catch(() => null);
-
-        // Build exchange rate lookup by date
-        const fxByDate = {};
-        let lastKnownFx = this.marketData?.usdNpr || 135;
-
-        const payload = fxRes && fxRes.data && fxRes.data.payload;
-        if (payload && payload.length > 0) {
-          for (const day of payload) {
-            const dateStr = day.date ? day.date.slice(0, 10) : null;
-            if (!dateStr) continue;
-            const usdEntry = (day.rates || []).find(r => r.currency && r.currency.iso3 === 'USD');
-            if (usdEntry) {
-              const rate = parseFloat(usdEntry.sell);
-              if (!isNaN(rate) && rate > 0) {
-                fxByDate[dateStr] = rate;
-                lastKnownFx = rate;
-              }
-            }
+        // Load pre-built historical data
+        if (!this._historicalData) {
+          const res = await fetch('data/historical-gold-data.json').catch(() => null);
+          if (res && res.ok) {
+            this._historicalData = await res.json();
           }
         }
 
-        // Build chart data from FX dates with current gold price
-        // (Historical gold OHLC requires an API key, so we use FX history
-        //  combined with the current XAU price for a useful NPR/tola chart)
         const labels = [];
         const values = [];
-        const margin = (parseFloat(this.marketMargin) || 1.3) / 100;
-        const currentXau = this.marketData?.xauUsd || 0;
+        const fenegosidaValues = [];
 
-        // If we have GoldAPI historical data, use it; otherwise use FX variation
-        let goldRes = null;
-        try {
-          if (window.GoldAPI && typeof window.GoldAPI.fetchHistoricalXau === 'function') {
-            const hist = await window.GoldAPI.fetchHistoricalXau(this.chartPeriod);
-            if (hist.length > 0) goldRes = hist;
-          }
-        } catch (e) { /* ignore */ }
-
-        if (goldRes && goldRes.length > 0) {
-          const sorted = goldRes.sort((a, b) => new Date(a.date) - new Date(b.date));
-          for (const point of sorted) {
-            const date = String(point.date).split('T')[0];
-            const close = point.close;
-            if (!date || !close) continue;
-            const fx = fxByDate[date] || lastKnownFx;
-            const perTolaUsd = (close * GRAMS_PER_TOLA) / GRAMS_PER_TROY_OZ;
-            const perTolaNpr = perTolaUsd * fx;
-            const afterDuty = perTolaNpr * (1 + CUSTOMS_DUTY);
-            labels.push(date);
-            values.push(Math.round(afterDuty * (1 + margin)));
-          }
-        } else if (currentXau && Object.keys(fxByDate).length > 0) {
-          // Show FX-driven variation with current gold price
-          const sortedDates = Object.keys(fxByDate).sort();
-          for (const date of sortedDates) {
-            const fx = fxByDate[date];
-            const perTolaUsd = (currentXau * GRAMS_PER_TOLA) / GRAMS_PER_TROY_OZ;
-            const perTolaNpr = perTolaUsd * fx;
-            const afterDuty = perTolaNpr * (1 + CUSTOMS_DUTY);
-            labels.push(date);
-            values.push(Math.round(afterDuty * (1 + margin)));
+        if (this._historicalData && this._historicalData.daily) {
+          const filtered = this._historicalData.daily.filter(d => d.date >= fromStr);
+          for (const d of filtered) {
+            labels.push(d.date);
+            // Use fenegosida price if available, otherwise computed
+            values.push(d.fenegosida || d.nprPerTola);
+            fenegosidaValues.push(d.fenegosida);
           }
         }
 
-        // If no OHLC data, show a message
         if (labels.length === 0) {
           if (this.chartInstance) {
             this.chartInstance.destroy();

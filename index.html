@@ -600,7 +600,7 @@
         <div class="flex items-center justify-between flex-wrap gap-3">
           <h3 class="text-sm font-semibold text-white uppercase tracking-wider">NPR/Tola Price Chart</h3>
           <div class="flex gap-1">
-            <template x-for="p in ['1W','1M','3M','6M','1Y']" :key="p">
+            <template x-for="p in ['1W','1M','3M','6M','1Y','2Y']" :key="p">
               <button class="period-btn" :class="{ active: chartPeriod === p }" @click="chartPeriod = p" x-text="p"></button>
             </template>
           </div>

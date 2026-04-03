@@ -1,0 +1,3 @@
+# Large source data files (used by the fetch script, not needed at runtime)
+XAU_1h_data.jsonl
+yahoo_gap_data.json

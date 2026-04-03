@@ -248,7 +248,7 @@
 
     // Primary: NRB API (returns official sell rates per date)
     try {
-      var nrbUrl = 'https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=1000&from=' +
+      var nrbUrl = 'https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=100&from=' +
         encodeURIComponent(fromDate) + '&to=' + encodeURIComponent(toDate);
       var response = await fetch(nrbUrl);
       if (response.ok) {
