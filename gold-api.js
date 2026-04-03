@@ -38,43 +38,45 @@
    * @returns {Promise<number|null>} NPR per 1 USD or null on failure.
    */
   async function fetchUsdNpr() {
-    // Primary source
+    // Primary source: Nepal Rastra Bank official sell rate
     try {
-      const response = await fetch('https://api.frankfurter.dev/v2/rate/USD/NPR');
+      var today = new Date().toISOString().slice(0, 10);
+      var nrbUrl = 'https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=5&from=' +
+        today + '&to=' + today;
+      var response = await fetch(nrbUrl);
       if (response.ok) {
-        const data = await response.json();
-        const rate = parseFloat(data.rate ?? data.rates?.NPR ?? data.npr);
-        if (!isNaN(rate) && rate > 0) {
-          return rate;
+        var data = await response.json();
+        var payload = data.data && data.data.payload;
+        if (payload && payload.length > 0) {
+          var rates = payload[0].rates;
+          for (var i = 0; i < rates.length; i++) {
+            if (rates[i].currency && rates[i].currency.iso3 === 'USD') {
+              var rate = parseFloat(rates[i].sell);
+              if (!isNaN(rate) && rate > 0) return rate;
+            }
+          }
         }
-        console.warn('fetchUsdNpr: invalid rate from primary source', data);
+        console.warn('fetchUsdNpr: USD not found in NRB response', data);
       } else {
-        console.warn('fetchUsdNpr: primary source status', response.status);
+        console.warn('fetchUsdNpr: NRB API status', response.status);
       }
     } catch (error) {
-      console.warn('fetchUsdNpr: primary source failed', error);
+      console.warn('fetchUsdNpr: NRB API failed', error);
     }
 
     // Fallback source
     try {
-      const response = await fetch(
-        'https://cdn.jsdelivr.net/gh/fawazahmed0/currency-api@1/latest/currencies/usd/npr.json'
-      );
-      if (!response.ok) {
-        console.warn('fetchUsdNpr: fallback source status', response.status);
-        return null;
+      response = await fetch('https://api.frankfurter.dev/v2/rate/USD/NPR');
+      if (response.ok) {
+        var fData = await response.json();
+        var fRate = parseFloat(fData.rate ?? fData.rates?.NPR ?? fData.npr);
+        if (!isNaN(fRate) && fRate > 0) return fRate;
       }
-      const data = await response.json();
-      const rate = parseFloat(data.npr);
-      if (isNaN(rate) || rate <= 0) {
-        console.warn('fetchUsdNpr: invalid rate from fallback source', data);
-        return null;
-      }
-      return rate;
     } catch (error) {
-      console.error('fetchUsdNpr: fallback source failed', error);
-      return null;
+      console.warn('fetchUsdNpr: fallback source failed', error);
     }
+
+    return null;
   }
 
   /**
@@ -244,6 +246,37 @@
       return {};
     }
 
+    // Primary: NRB API (returns official sell rates per date)
+    try {
+      var nrbUrl = 'https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=1000&from=' +
+        encodeURIComponent(fromDate) + '&to=' + encodeURIComponent(toDate);
+      var response = await fetch(nrbUrl);
+      if (response.ok) {
+        var data = await response.json();
+        var payload = data.data && data.data.payload;
+        if (payload && payload.length > 0) {
+          var result = {};
+          payload.forEach(function (day) {
+            var dateStr = day.date ? day.date.slice(0, 10) : null;
+            if (!dateStr) return;
+            var rates = day.rates || [];
+            for (var i = 0; i < rates.length; i++) {
+              if (rates[i].currency && rates[i].currency.iso3 === 'USD') {
+                var rate = parseFloat(rates[i].sell);
+                if (!isNaN(rate) && rate > 0) result[dateStr] = rate;
+                break;
+              }
+            }
+          });
+          if (Object.keys(result).length > 0) return result;
+        }
+      }
+      console.warn('fetchHistoricalUsdNpr: NRB API did not return usable data');
+    } catch (error) {
+      console.warn('fetchHistoricalUsdNpr: NRB API failed', error);
+    }
+
+    // Fallback: Frankfurter API
     try {
       var url =
         'https://api.frankfurter.dev/v2/rates/USD/NPR?from=' +
@@ -252,14 +285,12 @@
         encodeURIComponent(toDate);
       var response = await fetch(url);
       if (!response.ok) {
-        console.warn('fetchHistoricalUsdNpr: response status', response.status);
+        console.warn('fetchHistoricalUsdNpr: fallback status', response.status);
         return {};
       }
       var data = await response.json();
       var result = {};
 
-      // v2 range query returns a flat array with EUR as base for all currencies.
-      // To get USD/NPR, we need: NPR_per_EUR / USD_per_EUR for each date.
       if (Array.isArray(data)) {
         var nprByDate = {};
         var usdByDate = {};
@@ -275,7 +306,6 @@
         return result;
       }
 
-      // Single rate response: { date, rate }
       if (data.rate && data.date) {
         result[data.date] = parseFloat(data.rate);
         return result;
@@ -283,7 +313,7 @@
 
       return result;
     } catch (error) {
-      console.error('fetchHistoricalUsdNpr: request failed', error);
+      console.error('fetchHistoricalUsdNpr: fallback failed', error);
       return {};
     }
   }

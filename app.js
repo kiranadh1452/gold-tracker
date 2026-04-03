@@ -777,13 +777,19 @@ document.addEventListener('alpine:init', () => {
           };
         } else {
           // Inline fetch if GoldAPI module not loaded yet
+          var today = new Date().toISOString().slice(0, 10);
           const [goldRes, fxRes] = await Promise.all([
             fetch('https://api.gold-api.com/price/XAU').then(r => r.json()),
-            fetch('https://api.frankfurter.dev/v2/rate/USD/NPR').then(r => r.json()),
+            fetch('https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=5&from=' + today + '&to=' + today).then(r => r.json()),
           ]);
 
           const xauUsd = goldRes.price || 0;
-          const usdNpr = fxRes.rate || fxRes.rates?.NPR || 0;
+          let usdNpr = 0;
+          const payload = fxRes.data && fxRes.data.payload;
+          if (payload && payload.length > 0) {
+            const usdEntry = payload[0].rates.find(r => r.currency && r.currency.iso3 === 'USD');
+            if (usdEntry) usdNpr = parseFloat(usdEntry.sell) || 0;
+          }
 
           const margin = (parseFloat(this.marketMargin) || 1.3) / 100;
           const perTolaUsd = (xauUsd * GRAMS_PER_TOLA) / GRAMS_PER_TROY_OZ;
@@ -843,9 +849,9 @@ document.addEventListener('alpine:init', () => {
       const toStr = endDate.toISOString().split('T')[0];
 
       try {
-        // Fetch historical FX data from Frankfurter
-        // (returns flat array of { date, base, quote, rate })
-        const fxRes = await fetch(`https://api.frankfurter.dev/v2/rates/USD/NPR?from=${fromStr}&to=${toStr}`)
+        // Fetch historical FX data from NRB (official sell rates)
+        const nrbUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=1000&from=${fromStr}&to=${toStr}`;
+        const fxRes = await fetch(nrbUrl)
           .then(r => r.json())
           .catch(() => null);
 
@@ -853,23 +859,20 @@ document.addEventListener('alpine:init', () => {
         const fxByDate = {};
         let lastKnownFx = this.marketData?.usdNpr || 135;
 
-        if (Array.isArray(fxRes)) {
-          // Frankfurter v2 returns EUR-based rates; compute USD/NPR = NPR_per_EUR / USD_per_EUR
-          const nprByDate = {};
-          const usdByDate = {};
-          for (const item of fxRes) {
-            if (item.quote === 'NPR' && item.rate > 0) nprByDate[item.date] = item.rate;
-            if (item.quote === 'USD' && item.rate > 0) usdByDate[item.date] = item.rate;
-          }
-          for (const date of Object.keys(nprByDate)) {
-            if (usdByDate[date]) {
-              fxByDate[date] = nprByDate[date] / usdByDate[date];
-              lastKnownFx = fxByDate[date];
+        const payload = fxRes && fxRes.data && fxRes.data.payload;
+        if (payload && payload.length > 0) {
+          for (const day of payload) {
+            const dateStr = day.date ? day.date.slice(0, 10) : null;
+            if (!dateStr) continue;
+            const usdEntry = (day.rates || []).find(r => r.currency && r.currency.iso3 === 'USD');
+            if (usdEntry) {
+              const rate = parseFloat(usdEntry.sell);
+              if (!isNaN(rate) && rate > 0) {
+                fxByDate[dateStr] = rate;
+                lastKnownFx = rate;
+              }
             }
           }
-        } else if (fxRes && fxRes.rate) {
-          fxByDate[fxRes.date] = fxRes.rate;
-          lastKnownFx = fxRes.rate;
         }
 
         // Build chart data from FX dates with current gold price
