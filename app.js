@@ -807,6 +807,16 @@ document.addEventListener('alpine:init', () => {
 
         saveJSON('gold_market_data', this.marketData);
         localStorage.setItem('gold_margin', this.marketMargin);
+
+        // Save hourly snapshot for chart gap-fill
+        if (this.marketData.xauUsd && this.marketData.usdNpr && this.marketData.nprPerTola &&
+            window.GoldAPI && typeof window.GoldAPI.saveHourlySnapshot === 'function') {
+          window.GoldAPI.saveHourlySnapshot(
+            this.marketData.xauUsd,
+            this.marketData.usdNpr,
+            this.marketData.nprPerTola,
+          );
+        }
       } catch (e) {
         this.marketError = 'Failed to fetch market data. ' + (e.message || '');
         console.error('Gold market fetch error:', e);
@@ -849,7 +859,7 @@ document.addEventListener('alpine:init', () => {
       const fromStr = startDate.toISOString().split('T')[0];
 
       try {
-        // Load pre-built historical data
+        // Load pre-built historical data (from static JSON updated by GA)
         if (!this._historicalData) {
           const res = await fetch('data/historical-gold-data.json').catch(() => null);
           if (res && res.ok) {
@@ -861,6 +871,11 @@ document.addEventListener('alpine:init', () => {
         const values = [];
         const fenegosidaValues = [];
 
+        // 1. Static JSON — daily entries from GA
+        const lastStaticTs = this._historicalData?.hourly?.length
+          ? this._historicalData.hourly[this._historicalData.hourly.length - 1][0]
+          : 0;
+
         if (this._historicalData && this._historicalData.daily) {
           const filtered = this._historicalData.daily.filter(d => d.date >= fromStr);
           for (const d of filtered) {
@@ -868,6 +883,22 @@ document.addEventListener('alpine:init', () => {
             // Use fenegosida price if available, otherwise computed
             values.push(d.fenegosida || d.nprPerTola);
             fenegosidaValues.push(d.fenegosida);
+          }
+        }
+
+        // 2. Hourly cache — localStorage snapshots filling the gap
+        if (window.GoldAPI && typeof window.GoldAPI.getHourlyCache === 'function') {
+          const hourlyCache = window.GoldAPI.getHourlyCache();
+          for (const entry of hourlyCache) {
+            // Only add entries newer than the static data
+            if (entry.ts > lastStaticTs) {
+              const dt = new Date(entry.ts * 1000);
+              const label = dt.toLocaleDateString('en-CA') + ' ' +
+                dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+              labels.push(label);
+              values.push(entry.tola);
+              fenegosidaValues.push(null);
+            }
           }
         }
 

@@ -391,6 +391,74 @@
     return results;
   }
 
+  // -------------------------------------------------------------------------
+  // Hourly price cache (localStorage)
+  //
+  // Stores hourly snapshots collected from live API calls.  These fill the
+  // gap between the last entry in the static JSON (updated by GA daily) and
+  // "right now".  Entries older than 48 h are pruned on every write since
+  // GA will have committed them to the static file by then.
+  // -------------------------------------------------------------------------
+
+  var HOURLY_CACHE_KEY = 'gold_hourly_cache';
+  var HOURLY_TTL = 48 * 60 * 60 * 1000; // 48 hours
+
+  /**
+   * Read hourly cache from localStorage.
+   * @returns {Array<{ts: number, xau: number, npr: number, tola: number}>}
+   */
+  function getHourlyCache() {
+    try {
+      var raw = localStorage.getItem(HOURLY_CACHE_KEY);
+      if (!raw) return [];
+      var data = JSON.parse(raw);
+      if (!Array.isArray(data)) return [];
+      return data;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /**
+   * Save an hourly snapshot to the cache.  Deduplicates by rounding to the
+   * nearest hour and prunes entries older than HOURLY_TTL.
+   * @param {number} xauUsd
+   * @param {number} usdNpr
+   * @param {number} nprPerTola
+   */
+  function saveHourlySnapshot(xauUsd, usdNpr, nprPerTola) {
+    var now = Date.now();
+    // Round timestamp to the start of the current hour (seconds)
+    var hourTs = Math.floor(now / 3600000) * 3600;
+
+    var cache = getHourlyCache();
+
+    // Skip if we already have an entry for this hour
+    for (var i = 0; i < cache.length; i++) {
+      if (cache[i].ts === hourTs) return;
+    }
+
+    cache.push({
+      ts: hourTs,
+      xau: Math.round(xauUsd * 100) / 100,
+      npr: usdNpr,
+      tola: Math.round(nprPerTola),
+    });
+
+    // Prune old entries (older than 48h)
+    var cutoff = Math.floor((now - HOURLY_TTL) / 1000);
+    cache = cache.filter(function (entry) { return entry.ts >= cutoff; });
+
+    // Sort by timestamp
+    cache.sort(function (a, b) { return a.ts - b.ts; });
+
+    try {
+      localStorage.setItem(HOURLY_CACHE_KEY, JSON.stringify(cache));
+    } catch (e) {
+      console.warn('saveHourlySnapshot: could not persist', e);
+    }
+  }
+
   // Expose public API
   window.GoldAPI = {
     fetchLiveData: fetchLiveData,
@@ -399,5 +467,7 @@
     fetchHistoricalXau: fetchHistoricalXau,
     fetchHistoricalUsdNpr: fetchHistoricalUsdNpr,
     computeHistoricalNprPerTola: computeHistoricalNprPerTola,
+    getHourlyCache: getHourlyCache,
+    saveHourlySnapshot: saveHourlySnapshot,
   };
 })();
