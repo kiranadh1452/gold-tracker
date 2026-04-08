@@ -695,6 +695,7 @@ document.addEventListener('alpine:init', () => {
     marketError: null,
     chartInstance: null,
     chartPeriod: '1M',
+    chartHourly: false,
 
     // -----------------------------------------------------------------------
     // Live Market — computed
@@ -807,6 +808,16 @@ document.addEventListener('alpine:init', () => {
 
         saveJSON('gold_market_data', this.marketData);
         localStorage.setItem('gold_margin', this.marketMargin);
+
+        // Save hourly snapshot for chart gap-fill
+        if (this.marketData.xauUsd && this.marketData.usdNpr && this.marketData.nprPerTola &&
+            window.GoldAPI && typeof window.GoldAPI.saveHourlySnapshot === 'function') {
+          window.GoldAPI.saveHourlySnapshot(
+            this.marketData.xauUsd,
+            this.marketData.usdNpr,
+            this.marketData.nprPerTola,
+          );
+        }
       } catch (e) {
         this.marketError = 'Failed to fetch market data. ' + (e.message || '');
         console.error('Gold market fetch error:', e);
@@ -849,7 +860,7 @@ document.addEventListener('alpine:init', () => {
       const fromStr = startDate.toISOString().split('T')[0];
 
       try {
-        // Load pre-built historical data
+        // Load pre-built historical data (from static JSON updated by GA)
         if (!this._historicalData) {
           const res = await fetch('data/historical-gold-data.json').catch(() => null);
           if (res && res.ok) {
@@ -861,13 +872,63 @@ document.addEventListener('alpine:init', () => {
         const values = [];
         const fenegosidaValues = [];
 
-        if (this._historicalData && this._historicalData.daily) {
-          const filtered = this._historicalData.daily.filter(d => d.date >= fromStr);
-          for (const d of filtered) {
-            labels.push(d.date);
-            // Use fenegosida price if available, otherwise computed
-            values.push(d.fenegosida || d.nprPerTola);
-            fenegosidaValues.push(d.fenegosida);
+        const lastStaticTs = this._historicalData?.hourly?.length
+          ? this._historicalData.hourly[this._historicalData.hourly.length - 1][0]
+          : 0;
+        const fromTs = Math.floor(startDate.getTime() / 1000);
+
+        if (this.chartHourly) {
+          // Hourly mode — use hourly entries from static JSON
+          if (this._historicalData && this._historicalData.hourly) {
+            for (const [ts, xau, npr, tola] of this._historicalData.hourly) {
+              if (ts < fromTs) continue;
+              const dt = new Date(ts * 1000);
+              const label = dt.toLocaleDateString('en-CA') + ' ' +
+                dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+              labels.push(label);
+              values.push(tola);
+              fenegosidaValues.push(null);
+            }
+          }
+
+          // Append localStorage hourly cache (gap-fill for today)
+          if (window.GoldAPI && typeof window.GoldAPI.getHourlyCache === 'function') {
+            const hourlyCache = window.GoldAPI.getHourlyCache();
+            for (const entry of hourlyCache) {
+              if (entry.ts > lastStaticTs) {
+                const dt = new Date(entry.ts * 1000);
+                const label = dt.toLocaleDateString('en-CA') + ' ' +
+                  dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                labels.push(label);
+                values.push(entry.tola);
+                fenegosidaValues.push(null);
+              }
+            }
+          }
+        } else {
+          // Daily mode — use daily entries from static JSON
+          if (this._historicalData && this._historicalData.daily) {
+            const filtered = this._historicalData.daily.filter(d => d.date >= fromStr);
+            for (const d of filtered) {
+              labels.push(d.date);
+              values.push(d.fenegosida || d.nprPerTola);
+              fenegosidaValues.push(d.fenegosida);
+            }
+          }
+
+          // Append localStorage hourly cache (gap-fill for today)
+          if (window.GoldAPI && typeof window.GoldAPI.getHourlyCache === 'function') {
+            const hourlyCache = window.GoldAPI.getHourlyCache();
+            for (const entry of hourlyCache) {
+              if (entry.ts > lastStaticTs) {
+                const dt = new Date(entry.ts * 1000);
+                const label = dt.toLocaleDateString('en-CA') + ' ' +
+                  dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                labels.push(label);
+                values.push(entry.tola);
+                fenegosidaValues.push(null);
+              }
+            }
           }
         }
 
@@ -992,8 +1053,13 @@ document.addEventListener('alpine:init', () => {
         localStorage.setItem('gold_margin', v);
       });
 
-      // Watch chart period changes
+      // Watch chart period and hourly toggle changes
       this.$watch('chartPeriod', () => {
+        if (this.activeTab === 'market') {
+          this.loadChart();
+        }
+      });
+      this.$watch('chartHourly', () => {
         if (this.activeTab === 'market') {
           this.loadChart();
         }
